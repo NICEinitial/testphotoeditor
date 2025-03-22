@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src https://api.siliconflow.com;">
+  <title>简易图片编辑器</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="public/libs/fabric.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <h1>简易图片编辑器</h1>
+      <div class="tool-buttons">
+        <button id="open-image">打开图片</button>
+        <button id="save-image">保存图片</button>
+      </div>
+    </header>
+    
+    <div class="main-content">
+      <div class="sidebar">
+        <h3>编辑工具</h3>
+        <div class="tools-section">
+          <button id="filter-brightness">亮度</button>
+          <button id="filter-contrast">对比度</button>
+          <button id="filter-saturation">饱和度</button>
+          <button id="crop-image">裁剪</button>
+          <button id="rotate-image">旋转</button>
+          <button id="draw-tool">绘画</button>
+          <button id="add-text">添加文字</button>
+          <button id="add-sticker">添加贴纸</button>
+        </div>
+        
+        <h3>AI生成图像</h3>
+        <div class="ai-section">
+          <textarea id="ai-prompt" placeholder="输入描述，生成图像..."></textarea>
+          <button id="generate-image">生成图像</button>
+          <div id="ai-status"></div>
+        </div>
+      </div>
+      
+      <div class="canvas-container">
+        <canvas id="editor-canvas"></canvas>
+        <div id="canvas-message">打开图片或创建新画布开始编辑</div>
+      </div>
+    </div>
+    
+    <div id="debug-panel" class="debug-panel">
+      <h3>调试信息</h3>
+      <div id="debug-content"></div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html> 
