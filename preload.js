@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('electron', {
     openImage: () => ipcRenderer.invoke('dialog:openImage'),
     // 保存图片
     saveImage: (dataUrl) => ipcRenderer.invoke('dialog:saveImage', dataUrl),
+    // 下载远程图片
+    fetchRemoteImage: (url) => ipcRenderer.invoke('fetch:remoteImage', url),
   },
   
   // 调试相关功能

@@ -94,8 +94,55 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // 加载图片到画布
-    function loadImageToCanvas(src) {
-      fabric.Image.fromURL(src, (img) => {
+    async function loadImageToCanvas(src) {
+      try {
+        // 检查是否是远程URL（以http开头）
+        if (src.startsWith('http')) {
+          debug.log('检测到远程图片URL，开始下载转换');
+          
+          const statusEl = document.getElementById('ai-status');
+          if (statusEl) {
+            statusEl.textContent = '正在下载远程图片...';
+            statusEl.style.color = 'blue';
+          }
+          
+          try {
+            // 通过main进程下载远程图片并转换为data URI
+            const dataUrl = await window.electron.fileOps.fetchRemoteImage(src);
+            if (dataUrl) {
+              debug.log('远程图片下载成功，加载到画布');
+              loadImageFromDataUrl(dataUrl);
+              
+              if (statusEl) {
+                statusEl.textContent = '图像加载成功';
+                statusEl.style.color = 'green';
+              }
+            } else {
+              debug.error('无法加载远程图片');
+              if (statusEl) {
+                statusEl.textContent = '无法加载远程图片';
+                statusEl.style.color = 'red';
+              }
+            }
+          } catch (error) {
+            debug.error(`加载远程图片失败: ${error}`);
+            if (statusEl) {
+              statusEl.textContent = `加载远程图片失败: ${error}`;
+              statusEl.style.color = 'red';
+            }
+          }
+        } else {
+          // 对于本地图片或已经是data URI的情况，直接加载
+          loadImageFromDataUrl(src);
+        }
+      } catch (error) {
+        debug.error(`加载图片失败: ${error}`);
+      }
+    }
+    
+    // 实际加载图片到画布的函数
+    function loadImageFromDataUrl(dataUrl) {
+      fabric.Image.fromURL(dataUrl, (img) => {
         // 清除画布
         canvas.clear();
         
@@ -544,7 +591,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'Authorization': `Bearer ${apiKey}`
           },
           body: JSON.stringify({
-            model: 'deepseek-ai/Janus-Pro-7B',
+            model: 'Kwai-Kolors/Kolors',
             prompt: prompt,
             seed: Math.floor(Math.random() * 9999999999) + 1
           })

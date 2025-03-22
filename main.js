@@ -1,6 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios'); // 添加 axios 用于网络请求
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
@@ -63,6 +64,37 @@ ipcMain.handle('dialog:openImage', async () => {
     }
   } catch (error) {
     console.error('打开图片对话框失败:', error);
+    return null;
+  }
+});
+
+// 处理远程图片下载
+ipcMain.handle('fetch:remoteImage', async (event, url) => {
+  try {
+    console.log('开始下载远程图片:', url);
+    
+    // 下载图片
+    const response = await axios.get(url, { 
+      responseType: 'arraybuffer',
+      // 某些服务可能需要User-Agent
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
+    // 获取MIME类型
+    const contentType = response.headers['content-type'] || 'image/png';
+    
+    // 转换为Base64
+    const base64 = Buffer.from(response.data).toString('base64');
+    
+    // 创建data URI
+    const dataURI = `data:${contentType};base64,${base64}`;
+    
+    console.log('远程图片下载完成，已转换为data URI');
+    return dataURI;
+  } catch (error) {
+    console.error('下载远程图片失败:', error);
     return null;
   }
 });
