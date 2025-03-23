@@ -7,6 +7,31 @@
 
 // 图片编辑器主逻辑
 document.addEventListener('DOMContentLoaded', () => {
+  // 调试面板折叠功能
+  const debugPanel = document.getElementById('debug-panel');
+  const toggleDebugBtn = document.getElementById('toggle-debug');
+  const debugHeader = document.querySelector('.debug-header');
+  
+  // 切换调试面板折叠状态
+  function toggleDebugPanel() {
+    debugPanel.classList.toggle('collapsed');
+    toggleDebugBtn.textContent = debugPanel.classList.contains('collapsed') ? '展开' : '折叠';
+  }
+  
+  // 绑定事件监听
+  if (toggleDebugBtn) {
+    toggleDebugBtn.addEventListener('click', toggleDebugPanel);
+  }
+  
+  if (debugHeader) {
+    debugHeader.addEventListener('click', (e) => {
+      // 确保点击不是在按钮上
+      if (e.target !== toggleDebugBtn) {
+        toggleDebugPanel();
+      }
+    });
+  }
+  
   // 调试工具
   const debug = {
     log: (message) => {
@@ -60,7 +85,403 @@ document.addEventListener('DOMContentLoaded', () => {
     // 当前状态
     let currentImage = null;
     
+    // 历史记录管理
+    const historyManager = {
+      history: [],  // 存储历史操作
+      currentIndex: -1, // 当前历史位置
+      maxHistoryItems: 20, // 最大历史条目数量
+      
+      // 添加操作到历史记录
+      addAction(action) {
+        // 如果我们在历史中间进行了操作，清除后面的历史
+        if (this.currentIndex < this.history.length - 1) {
+          this.history = this.history.slice(0, this.currentIndex + 1);
+        }
+        
+        // 添加新操作
+        this.history.push(action);
+        
+        // 如果超过最大限制，删除最旧的记录
+        if (this.history.length > this.maxHistoryItems) {
+          this.history.shift();
+        } else {
+          this.currentIndex++;
+        }
+        
+        // 更新UI
+        this.updateHistoryUI();
+        this.updateButtons();
+      },
+      
+      // 撤销操作
+      undo() {
+        if (this.currentIndex >= 0) {
+          this.currentIndex--;
+          this.applyHistoryState();
+          this.updateHistoryUI();
+          this.updateButtons();
+        }
+      },
+      
+      // 重做操作
+      redo() {
+        if (this.currentIndex < this.history.length - 1) {
+          this.currentIndex++;
+          this.applyHistoryState();
+          this.updateHistoryUI();
+          this.updateButtons();
+        }
+      },
+      
+      // 应用历史状态
+      applyHistoryState() {
+        if (this.currentIndex >= 0 && this.currentIndex < this.history.length) {
+          const state = this.history[this.currentIndex];
+          canvas.loadFromJSON(state.canvasState, () => {
+            canvas.renderAll();
+            
+            // 历史记录中的对象恢复后需要更新currentImage引用
+            if (state.hasImage) {
+              currentImage = canvas.getObjects().find(obj => obj.type === 'image');
+            } else {
+              currentImage = null;
+            }
+            
+            // 恢复图层管理器的状态
+            layerManager.setLayersFromObjects(canvas.getObjects());
+          });
+        } else if (this.currentIndex === -1) {
+          // 清空画布
+          canvas.clear();
+          currentImage = null;
+          layerManager.clearLayers();
+        }
+      },
+      
+      // 更新历史记录UI
+      updateHistoryUI() {
+        const historyList = document.getElementById('history-list');
+        if (!historyList) return;
+        
+        historyList.innerHTML = '';
+        
+        this.history.forEach((action, index) => {
+          const item = document.createElement('div');
+          item.className = `list-group-item history-item ${index === this.currentIndex ? 'active' : ''}`;
+          item.innerHTML = `
+            <div class="history-text">${action.name}</div>
+            <span class="badge bg-secondary history-index">#${index + 1}</span>
+          `;
+          
+          // 点击历史记录项跳转到该状态
+          item.addEventListener('click', () => {
+            this.currentIndex = index;
+            this.applyHistoryState();
+            this.updateHistoryUI();
+            this.updateButtons();
+          });
+          
+          historyList.appendChild(item);
+        });
+        
+        // 滚动到当前位置
+        if (this.currentIndex >= 0) {
+          const activeItem = historyList.querySelector('.active');
+          if (activeItem) {
+            activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+      },
+      
+      // 更新按钮状态
+      updateButtons() {
+        const undoBtn = document.getElementById('undo-action');
+        const redoBtn = document.getElementById('redo-action');
+        
+        if (undoBtn) {
+          undoBtn.disabled = this.currentIndex < 0;
+        }
+        
+        if (redoBtn) {
+          redoBtn.disabled = this.currentIndex >= this.history.length - 1;
+        }
+      },
+      
+      // 保存当前画布状态
+      saveCanvasState(actionName) {
+        const canvasState = JSON.stringify(canvas);
+        const hasImage = !!currentImage;
+        
+        this.addAction({
+          name: actionName,
+          canvasState: canvasState,
+          hasImage: hasImage,
+          timestamp: new Date().getTime()
+        });
+      }
+    };
+    
+    // 图层管理
+    const layerManager = {
+      layers: [], // 存储图层信息
+      maxLayers: 20, // 最大图层数量
+      activeLayerIndex: -1, // 当前活动图层索引
+      
+      // 初始化默认图层
+      init() {
+        this.addLayer('背景图层');
+        this.updateLayersUI();
+      },
+      
+      // 添加新图层
+      addLayer(name) {
+        if (this.layers.length >= this.maxLayers) {
+          debug.error(`已达到最大图层数量 ${this.maxLayers}`);
+          return false;
+        }
+        
+        const newLayer = {
+          id: Date.now() + Math.floor(Math.random() * 1000),
+          name: name || `图层 ${this.layers.length + 1}`,
+          visible: true,
+          locked: false,
+          objects: []
+        };
+        
+        this.layers.push(newLayer);
+        this.activeLayerIndex = this.layers.length - 1;
+        this.updateLayersUI();
+        return true;
+      },
+      
+      // 删除当前选中的图层
+      deleteActiveLayer() {
+        if (this.activeLayerIndex < 0 || this.layers.length <= 1) {
+          debug.error('无法删除唯一的图层');
+          return false;
+        }
+        
+        // 从画布移除该图层的所有对象
+        const layerToDelete = this.layers[this.activeLayerIndex];
+        layerToDelete.objects.forEach(objId => {
+          const obj = this.findObjectById(objId);
+          if (obj) {
+            canvas.remove(obj);
+          }
+        });
+        
+        // 删除图层
+        this.layers.splice(this.activeLayerIndex, 1);
+        
+        // 更新活动图层
+        this.activeLayerIndex = Math.min(this.activeLayerIndex, this.layers.length - 1);
+        
+        this.updateLayersUI();
+        canvas.renderAll();
+        return true;
+      },
+      
+      // 切换图层可见性
+      toggleLayerVisibility(index) {
+        if (index >= 0 && index < this.layers.length) {
+          const layer = this.layers[index];
+          layer.visible = !layer.visible;
+          
+          // 更新画布中对象的可见性
+          layer.objects.forEach(objId => {
+            const obj = this.findObjectById(objId);
+            if (obj) {
+              obj.visible = layer.visible;
+            }
+          });
+          
+          this.updateLayersUI();
+          canvas.renderAll();
+        }
+      },
+      
+      // 设置活动图层
+      setActiveLayer(index) {
+        if (index >= 0 && index < this.layers.length) {
+          this.activeLayerIndex = index;
+          this.updateLayersUI();
+          
+          // 仅允许活动图层的对象可选
+          canvas.getObjects().forEach(obj => {
+            const layerIndex = this.getLayerIndexByObjectId(obj.id);
+            obj.selectable = layerIndex === this.activeLayerIndex && !this.layers[layerIndex].locked;
+          });
+          
+          canvas.renderAll();
+        }
+      },
+      
+      // 添加对象到当前活动图层
+      addObjectToActiveLayer(obj) {
+        if (this.activeLayerIndex < 0) {
+          debug.error('没有活动图层');
+          return false;
+        }
+        
+        // 确保对象有唯一ID
+        if (!obj.id) {
+          obj.id = Date.now() + Math.floor(Math.random() * 1000);
+        }
+        
+        this.layers[this.activeLayerIndex].objects.push(obj.id);
+        this.updateLayersUI();
+        return true;
+      },
+      
+      // 从画布对象重建图层
+      setLayersFromObjects(objects) {
+        // 清空所有图层中的对象
+        this.layers.forEach(layer => {
+          layer.objects = [];
+        });
+        
+        // 为每个对象分配图层
+        objects.forEach(obj => {
+          if (!obj.id) {
+            obj.id = Date.now() + Math.floor(Math.random() * 1000);
+          }
+          
+          // 尝试找到对象所属的图层
+          const layerIndex = this.getLayerIndexByObjectId(obj.id);
+          if (layerIndex >= 0) {
+            this.layers[layerIndex].objects.push(obj.id);
+          } else {
+            // 如果找不到图层，添加到活动图层
+            if (this.activeLayerIndex >= 0) {
+              this.layers[this.activeLayerIndex].objects.push(obj.id);
+            } else if (this.layers.length > 0) {
+              // 或者添加到第一个图层
+              this.layers[0].objects.push(obj.id);
+            }
+          }
+        });
+        
+        this.updateLayersUI();
+      },
+      
+      // 根据对象ID找到对象
+      findObjectById(objId) {
+        return canvas.getObjects().find(obj => obj.id === objId);
+      },
+      
+      // 获取对象所在的图层索引
+      getLayerIndexByObjectId(objId) {
+        for (let i = 0; i < this.layers.length; i++) {
+          if (this.layers[i].objects.includes(objId)) {
+            return i;
+          }
+        }
+        return -1;
+      },
+      
+      // 清空所有图层
+      clearLayers() {
+        const keepFirstLayer = this.layers.length > 0;
+        
+        if (keepFirstLayer) {
+          // 保留第一个图层但清空其中的对象
+          this.layers = [{ 
+            ...this.layers[0],
+            objects: [] 
+          }];
+          this.activeLayerIndex = 0;
+        } else {
+          this.layers = [];
+          this.activeLayerIndex = -1;
+          this.init(); // 重新初始化一个默认图层
+        }
+        
+        this.updateLayersUI();
+      },
+      
+      // 更新图层UI
+      updateLayersUI() {
+        const layersList = document.getElementById('layers-list');
+        if (!layersList) return;
+        
+        layersList.innerHTML = '';
+        
+        // 倒序显示图层（顶层图层显示在上面）
+        [...this.layers].reverse().forEach((layer, reversedIndex) => {
+          const actualIndex = this.layers.length - 1 - reversedIndex;
+          const item = document.createElement('div');
+          item.className = `list-group-item layer-item ${actualIndex === this.activeLayerIndex ? 'active' : ''}`;
+          item.innerHTML = `
+            <div class="layer-visibility" data-visible="${layer.visible}">
+              <i class="bi ${layer.visible ? 'bi-eye-fill' : 'bi-eye-slash'}"></i>
+            </div>
+            <div class="layer-name">${layer.name}</div>
+            <span class="badge bg-secondary layer-index">#${actualIndex + 1}</span>
+          `;
+          
+          // 点击图层项设置为活动图层
+          item.addEventListener('click', (e) => {
+            if (!e.target.classList.contains('layer-visibility') && !e.target.closest('.layer-visibility')) {
+              this.setActiveLayer(actualIndex);
+            }
+          });
+          
+          // 点击可见性图标切换可见性
+          const visibilityIcon = item.querySelector('.layer-visibility');
+          visibilityIcon.addEventListener('click', () => {
+            this.toggleLayerVisibility(actualIndex);
+          });
+          
+          layersList.appendChild(item);
+        });
+      }
+    };
+    
     // 工具栏功能
+    
+    // 初始化图层和历史记录
+    layerManager.init();
+    historyManager.saveCanvasState('初始状态');
+    
+    // 绑定历史记录按钮事件
+    document.getElementById('undo-action').addEventListener('click', () => {
+      historyManager.undo();
+    });
+    
+    document.getElementById('redo-action').addEventListener('click', () => {
+      historyManager.redo();
+    });
+    
+    // 绑定图层按钮事件
+    document.getElementById('add-layer').addEventListener('click', () => {
+      if (layerManager.addLayer()) {
+        historyManager.saveCanvasState('添加图层');
+      }
+    });
+    
+    document.getElementById('delete-layer').addEventListener('click', () => {
+      if (layerManager.deleteActiveLayer()) {
+        historyManager.saveCanvasState('删除图层');
+      }
+    });
+    
+    // 监听Canvas对象修改事件
+    canvas.on('object:modified', () => {
+      historyManager.saveCanvasState('修改对象');
+    });
+    
+    canvas.on('object:added', (e) => {
+      // 为新添加的对象设置ID并添加到当前活动图层
+      if (e.target && !e.target.id) {
+        e.target.id = Date.now() + Math.floor(Math.random() * 1000);
+        layerManager.addObjectToActiveLayer(e.target);
+      }
+    });
+    
+    canvas.on('object:removed', () => {
+      // 在对象移除后更新图层
+      layerManager.setLayersFromObjects(canvas.getObjects());
+    });
     
     // 打开图片
     document.getElementById('open-image').addEventListener('click', async () => {
@@ -68,6 +489,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const result = await window.electron.fileOps.openImage();
         if (result) {
           debug.log(`打开图片: ${result.path}`);
+          
+          // 保存当前状态，在加载新图片前
+          historyManager.saveCanvasState('打开图片前');
+          
           loadImageToCanvas(result.data);
         }
       } catch (error) {
@@ -163,14 +588,26 @@ document.addEventListener('DOMContentLoaded', () => {
         img.set({
           left: (canvasWidth - imgWidth * scale) / 2,
           top: (canvasHeight - imgHeight * scale) / 2,
-          selectable: true
+          selectable: true,
+          id: Date.now() + Math.floor(Math.random() * 1000) // 给图片添加ID
         });
+        
+        // 清空图层并创建新的图层用于图片
+        layerManager.clearLayers();
+        layerManager.addLayer('图片图层');
         
         canvas.add(img);
         canvas.setActiveObject(img);
         canvas.renderAll();
         
         currentImage = img;
+        
+        // 将图片添加到活动图层
+        layerManager.addObjectToActiveLayer(img);
+        
+        // 保存加载图片后的状态
+        historyManager.saveCanvasState('加载图片');
+        
         debug.log(`图片已加载，尺寸: ${imgWidth}x${imgHeight}，缩放比: ${scale}`);
       }, (error) => {
         debug.error(`加载图片失败: ${error}`);
@@ -179,6 +616,25 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 图像滤镜效果
     
+    // 应用滤镜到当前图像
+    function applyFilter(filter) {
+      if (!currentImage) return;
+      
+      const filtersArray = currentImage.filters || [];
+      const filterType = filter.type;
+      
+      // 移除同类型的旧滤镜
+      const newFilters = filtersArray.filter(f => f.type !== filterType);
+      newFilters.push(filter);
+      
+      currentImage.filters = newFilters;
+      currentImage.applyFilters();
+      canvas.renderAll();
+      
+      // 保存应用滤镜后的状态
+      historyManager.saveCanvasState(`应用${filterType}滤镜`);
+    }
+    
     // 亮度调整
     document.getElementById('filter-brightness').addEventListener('click', () => {
       if (!currentImage) {
@@ -186,18 +642,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      // 创建一个简单的对话框来替代 prompt
-      const value = 0.1; // 默认值
+      // 创建一个Bootstrap风格的对话框
       const dialog = document.createElement('div');
+      dialog.className = 'custom-dialog';
       dialog.innerHTML = `
-        <div style="background: white; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.3); position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000;">
-          <h3>调整亮度</h3>
-          <input type="range" id="brightness-slider" min="-1" max="1" step="0.1" value="${value}" style="width: 100%;">
-          <div id="brightness-value">${value}</div>
-          <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-            <button id="cancel-brightness">取消</button>
-            <button id="apply-brightness">应用</button>
-          </div>
+        <h3>调整亮度</h3>
+        <div class="mb-3">
+          <label for="brightness-slider" class="form-label">亮度值: <span id="brightness-value">0.1</span></label>
+          <input type="range" class="form-range" id="brightness-slider" min="-1" max="1" step="0.1" value="0.1">
+        </div>
+        <div class="custom-dialog-buttons">
+          <button id="cancel-brightness" class="btn btn-secondary">取消</button>
+          <button id="apply-brightness" class="btn btn-primary">应用</button>
         </div>
       `;
       document.body.appendChild(dialog);
@@ -230,18 +686,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      // 创建一个简单的对话框来替代 prompt
-      const value = 0.1; // 默认值
+      // 创建一个Bootstrap风格的对话框
       const dialog = document.createElement('div');
+      dialog.className = 'custom-dialog';
       dialog.innerHTML = `
-        <div style="background: white; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.3); position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000;">
-          <h3>调整对比度</h3>
-          <input type="range" id="contrast-slider" min="-1" max="1" step="0.1" value="${value}" style="width: 100%;">
-          <div id="contrast-value">${value}</div>
-          <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-            <button id="cancel-contrast">取消</button>
-            <button id="apply-contrast">应用</button>
-          </div>
+        <h3>调整对比度</h3>
+        <div class="mb-3">
+          <label for="contrast-slider" class="form-label">对比度值: <span id="contrast-value">0.1</span></label>
+          <input type="range" class="form-range" id="contrast-slider" min="-1" max="1" step="0.1" value="0.1">
+        </div>
+        <div class="custom-dialog-buttons">
+          <button id="cancel-contrast" class="btn btn-secondary">取消</button>
+          <button id="apply-contrast" class="btn btn-primary">应用</button>
         </div>
       `;
       document.body.appendChild(dialog);
@@ -274,18 +730,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      // 创建一个简单的对话框来替代 prompt
-      const value = 0.1; // 默认值
+      // 创建一个Bootstrap风格的对话框
       const dialog = document.createElement('div');
+      dialog.className = 'custom-dialog';
       dialog.innerHTML = `
-        <div style="background: white; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.3); position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000;">
-          <h3>调整饱和度</h3>
-          <input type="range" id="saturation-slider" min="-1" max="1" step="0.1" value="${value}" style="width: 100%;">
-          <div id="saturation-value">${value}</div>
-          <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-            <button id="cancel-saturation">取消</button>
-            <button id="apply-saturation">应用</button>
-          </div>
+        <h3>调整饱和度</h3>
+        <div class="mb-3">
+          <label for="saturation-slider" class="form-label">饱和度值: <span id="saturation-value">0.1</span></label>
+          <input type="range" class="form-range" id="saturation-slider" min="-1" max="1" step="0.1" value="0.1">
+        </div>
+        <div class="custom-dialog-buttons">
+          <button id="cancel-saturation" class="btn btn-secondary">取消</button>
+          <button id="apply-saturation" class="btn btn-primary">应用</button>
         </div>
       `;
       document.body.appendChild(dialog);
@@ -311,22 +767,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
     
-    // 应用滤镜到当前图像
-    function applyFilter(filter) {
-      if (!currentImage) return;
-      
-      const filtersArray = currentImage.filters || [];
-      const filterType = filter.type;
-      
-      // 移除同类型的旧滤镜
-      const newFilters = filtersArray.filter(f => f.type !== filterType);
-      newFilters.push(filter);
-      
-      currentImage.filters = newFilters;
-      currentImage.applyFilters();
-      canvas.renderAll();
-    }
-    
     // 裁剪功能
     document.getElementById('crop-image').addEventListener('click', () => {
       if (!currentImage) {
@@ -334,9 +774,33 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
+      // 保存裁剪前的状态
+      historyManager.saveCanvasState('裁剪前');
+      
       // 开始裁剪模式
       debug.log('进入裁剪模式');
-      alert('裁剪功能: 使用选择工具选中图片区域，然后按回车键确认裁剪');
+      
+      // 使用Bootstrap提示
+      const alertDiv = document.createElement('div');
+      alertDiv.className = 'alert alert-info position-absolute top-0 start-50 translate-middle-x mt-3';
+      alertDiv.style.zIndex = 1050;
+      alertDiv.innerHTML = `
+        <i class="bi bi-info-circle me-2"></i>裁剪功能: 使用选择工具选中图片区域，然后按<kbd>Enter</kbd>键确认裁剪
+        <button type="button" class="btn-close" aria-label="Close"></button>
+      `;
+      document.body.appendChild(alertDiv);
+      
+      const closeButton = alertDiv.querySelector('.btn-close');
+      closeButton.addEventListener('click', () => {
+        document.body.removeChild(alertDiv);
+      });
+      
+      // 自动在几秒后关闭提示
+      setTimeout(() => {
+        if (document.body.contains(alertDiv)) {
+          document.body.removeChild(alertDiv);
+        }
+      }, 5000);
       
       // 创建裁剪矩形
       const cropRect = new fabric.Rect({
@@ -345,9 +809,10 @@ document.addEventListener('DOMContentLoaded', () => {
         width: 200,
         height: 200,
         fill: 'transparent',
-        stroke: 'red',
+        stroke: '#007bff',
         strokeWidth: 2,
-        strokeDashArray: [5, 5]
+        strokeDashArray: [5, 5],
+        id: Date.now() + Math.floor(Math.random() * 1000)
       });
       
       canvas.add(cropRect);
@@ -384,16 +849,34 @@ document.addEventListener('DOMContentLoaded', () => {
               0, 0, cropWidth, cropHeight
             );
             
+            // 获取当前图层索引
+            const layerIndex = layerManager.getLayerIndexByObjectId(currentImage.id);
+            
             // 将裁剪后的图像加载回主画布
             fabric.Image.fromURL(tempCanvas.toDataURL(), (croppedImg) => {
               canvas.remove(cropRect);
               canvas.remove(img);
+              
+              // 为裁剪后的图像设置ID
+              croppedImg.id = Date.now() + Math.floor(Math.random() * 1000);
               
               canvas.add(croppedImg);
               canvas.setActiveObject(croppedImg);
               canvas.renderAll();
               
               currentImage = croppedImg;
+              
+              // 将裁剪后的图像添加到相同的图层
+              if (layerIndex >= 0) {
+                layerManager.layers[layerIndex].objects.push(croppedImg.id);
+                layerManager.updateLayersUI();
+              } else {
+                layerManager.addObjectToActiveLayer(croppedImg);
+              }
+              
+              // 保存裁剪后的状态
+              historyManager.saveCanvasState('裁剪图片');
+              
               debug.log(`图片已裁剪至 ${cropWidth}x${cropHeight}`);
             });
           } catch (error) {
@@ -415,18 +898,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       
-      // 创建一个简单的对话框来替代 prompt
-      const value = 90; // 默认值
+      // 创建一个Bootstrap风格的对话框
       const dialog = document.createElement('div');
+      dialog.className = 'custom-dialog';
       dialog.innerHTML = `
-        <div style="background: white; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.3); position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000;">
-          <h3>旋转图像</h3>
-          <input type="range" id="rotate-slider" min="0" max="360" step="1" value="${value}" style="width: 100%;">
-          <div id="rotate-value">${value}°</div>
-          <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-            <button id="cancel-rotate">取消</button>
-            <button id="apply-rotate">应用</button>
-          </div>
+        <h3>旋转图像</h3>
+        <div class="mb-3">
+          <label for="rotate-slider" class="form-label">旋转角度: <span id="rotate-value">90°</span></label>
+          <input type="range" class="form-range" id="rotate-slider" min="0" max="360" step="1" value="90">
+        </div>
+        <div class="custom-dialog-buttons">
+          <button id="cancel-rotate" class="btn btn-secondary">取消</button>
+          <button id="apply-rotate" class="btn btn-primary">应用</button>
         </div>
       `;
       document.body.appendChild(dialog);
@@ -444,9 +927,17 @@ document.addEventListener('DOMContentLoaded', () => {
       
       document.getElementById('apply-rotate').addEventListener('click', () => {
         const value = parseFloat(slider.value);
+        
+        // 保存旋转前的状态
+        historyManager.saveCanvasState('旋转前');
+        
         currentImage.rotate(value);
         canvas.renderAll();
         debug.log(`图片已旋转 ${value} 度`);
+        
+        // 保存旋转后的状态
+        historyManager.saveCanvasState('旋转图片');
+        
         document.body.removeChild(dialog);
       });
     });
@@ -458,26 +949,47 @@ document.addEventListener('DOMContentLoaded', () => {
       canvas.isDrawingMode = isDrawingMode;
       
       if (isDrawingMode) {
+        // 保存绘画前的状态
+        historyManager.saveCanvasState('开始绘画');
+        
         canvas.freeDrawingBrush.width = 5;
         canvas.freeDrawingBrush.color = '#ff0000';
         debug.log('已开启绘画模式');
+        
+        // 当绘画结束时保存状态
+        canvas.on('path:created', () => {
+          // 为新创建的路径添加ID并关联到当前图层
+          const path = canvas.getObjects().pop();
+          if (path && !path.id) {
+            path.id = Date.now() + Math.floor(Math.random() * 1000);
+            layerManager.addObjectToActiveLayer(path);
+          }
+          historyManager.saveCanvasState('绘画');
+        });
       } else {
         debug.log('已关闭绘画模式');
+        // 移除事件监听
+        canvas.off('path:created');
       }
     });
     
     // 添加文字
     document.getElementById('add-text').addEventListener('click', () => {
-      // 创建一个简单的对话框来替代 prompt
+      // 创建一个Bootstrap风格的对话框
       const dialog = document.createElement('div');
+      dialog.className = 'custom-dialog';
       dialog.innerHTML = `
-        <div style="background: white; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.3); position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000;">
-          <h3>添加文字</h3>
-          <input type="text" id="text-input" value="示例文字" style="width: 100%;">
-          <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-            <button id="cancel-text">取消</button>
-            <button id="apply-text">添加</button>
-          </div>
+        <h3>添加文字</h3>
+        <div class="mb-3">
+          <input type="text" id="text-input" class="form-control" value="示例文字" placeholder="输入要添加的文字">
+        </div>
+        <div class="mb-3">
+          <label for="text-color" class="form-label">文字颜色</label>
+          <input type="color" id="text-color" class="form-control form-control-color" value="#000000">
+        </div>
+        <div class="custom-dialog-buttons">
+          <button id="cancel-text" class="btn btn-secondary">取消</button>
+          <button id="apply-text" class="btn btn-primary">添加</button>
         </div>
       `;
       document.body.appendChild(dialog);
@@ -488,22 +1000,35 @@ document.addEventListener('DOMContentLoaded', () => {
       
       document.getElementById('apply-text').addEventListener('click', () => {
         const text = document.getElementById('text-input').value;
+        const textColor = document.getElementById('text-color').value;
+        
         if (!text) {
           document.body.removeChild(dialog);
           return;
         }
+        
+        // 保存添加文字前的状态
+        historyManager.saveCanvasState('添加文字前');
         
         const textObj = new fabric.Text(text, {
           left: 100,
           top: 100,
           fontFamily: 'sans-serif',
           fontSize: 30,
-          fill: '#000000'
+          fill: textColor,
+          id: Date.now() + Math.floor(Math.random() * 1000)
         });
         
         canvas.add(textObj);
         canvas.setActiveObject(textObj);
         canvas.renderAll();
+        
+        // 将文字对象添加到当前活动图层
+        layerManager.addObjectToActiveLayer(textObj);
+        
+        // 保存添加文字后的状态
+        historyManager.saveCanvasState('添加文字');
+        
         debug.log('已添加文字对象');
         document.body.removeChild(dialog);
       });
@@ -518,22 +1043,23 @@ document.addEventListener('DOMContentLoaded', () => {
         { name: '星星', url: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48cGF0aCBkPSJNIDUwIDEwIEwgNjEgNDQgTCA5OCA0NCBMIDY4IDY0IEwgNzkgOTggTCA1MCA3OCBMIDIxIDk4IEwgMzIgNjQgTCAyIDQ0IEwgMzkgNDQgTCA1MCAxMCIgZmlsbD0iZ29sZCIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9zdmc+' }
       ];
       
-      // 使用自定义对话框替代 prompt
+      // 使用Bootstrap风格对话框
       const dialog = document.createElement('div');
+      dialog.className = 'custom-dialog';
       dialog.innerHTML = `
-        <div style="background: white; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.3); position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000;">
-          <h3>选择贴纸</h3>
-          <div style="display: flex; gap: 10px; margin-top: 10px;">
-            ${stickers.map((sticker, index) => `
-              <div class="sticker-option" data-index="${index}" style="cursor: pointer; border: 1px solid #ccc; padding: 5px; text-align: center;">
-                <img src="${sticker.url}" style="width: 50px; height: 50px;">
-                <div>${sticker.name}</div>
+        <h3>选择贴纸</h3>
+        <div class="sticker-grid">
+          ${stickers.map((sticker, index) => `
+            <div class="sticker-option card h-100" data-index="${index}">
+              <img src="${sticker.url}" class="card-img-top p-2" alt="${sticker.name}">
+              <div class="card-body p-2 text-center">
+                <h5 class="card-title m-0 fs-6">${sticker.name}</h5>
               </div>
-            `).join('')}
-          </div>
-          <div style="display: flex; justify-content: space-between; margin-top: 10px;">
-            <button id="cancel-sticker">取消</button>
-          </div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="custom-dialog-buttons">
+          <button id="cancel-sticker" class="btn btn-secondary">取消</button>
         </div>
       `;
       document.body.appendChild(dialog);
@@ -548,17 +1074,28 @@ document.addEventListener('DOMContentLoaded', () => {
           const index = parseInt(option.dataset.index);
           const sticker = stickers[index];
           
+          // 保存添加贴纸前的状态
+          historyManager.saveCanvasState('添加贴纸前');
+          
           fabric.Image.fromURL(sticker.url, (img) => {
             img.set({
               left: 100,
               top: 100,
               scaleX: 0.5,
-              scaleY: 0.5
+              scaleY: 0.5,
+              id: Date.now() + Math.floor(Math.random() * 1000)
             });
             
             canvas.add(img);
             canvas.setActiveObject(img);
             canvas.renderAll();
+            
+            // 将贴纸添加到当前活动图层
+            layerManager.addObjectToActiveLayer(img);
+            
+            // 保存添加贴纸后的状态
+            historyManager.saveCanvasState(`添加贴纸: ${sticker.name}`);
+            
             debug.log(`已添加贴纸: ${sticker.name}`);
           });
           
@@ -582,6 +1119,9 @@ document.addEventListener('DOMContentLoaded', () => {
       debug.log(`开始生成图像，提示词: "${prompt}"`);
       
       try {
+        // 保存生成图像前的状态
+        historyManager.saveCanvasState('生成AI图像前');
+        
         // 调用 SiliconFlow API
         const apiKey = 'sk-bpxknhfednxmnjkxqkbjpegbivbhlxjmijxiocjbedfhciyt';
         const response = await fetch('https://api.siliconflow.com/v1/images/generations', {
@@ -607,10 +1147,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // 根据API返回格式获取图像URL
         if (result.images && result.images.length > 0 && result.images[0].url) {
           const imageUrl = result.images[0].url;
-          loadImageToCanvas(imageUrl);
+          await loadImageToCanvas(imageUrl);
           
           statusEl.textContent = '图像生成成功';
           statusEl.style.color = 'green';
+          
+          // 生成后，画布会被更新并在loadImageToCanvas中保存状态
         } else {
           throw new Error('API返回的数据格式不正确');
         }

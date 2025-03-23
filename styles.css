@@ -6,7 +6,7 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  background-color: #f5f5f5;
+  background-color: #f8f9fa;
   color: #333;
   height: 100vh;
   overflow: hidden;
@@ -22,7 +22,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background-color: #2c3e50;
+  background-color: #343a40;
   color: white;
   padding: 10px 20px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
@@ -31,6 +31,7 @@ body {
 .app-header h1 {
   margin: 0;
   font-size: 1.5rem;
+  font-weight: 500;
 }
 
 .tool-buttons {
@@ -46,22 +47,90 @@ body {
 
 .sidebar {
   width: 250px;
-  background-color: #ecf0f1;
+  background-color: #f8f9fa;
   padding: 15px;
   overflow-y: auto;
-  box-shadow: 1px 0 5px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+  border-radius: 0;
 }
 
-.sidebar h3 {
-  margin-top: 15px;
-  margin-bottom: 10px;
-  color: #2c3e50;
+.left-sidebar {
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.05);
+  border-right: 1px solid #dee2e6;
 }
 
-.tools-section, .ai-section {
+.right-sidebar {
+  box-shadow: -2px 0 5px rgba(0, 0, 0, 0.05);
+  border-left: 1px solid #dee2e6;
+}
+
+.sidebar-title {
+  color: #343a40;
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin-bottom: 15px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.tools-section, .ai-section, .layers-section, .history-section {
+  margin-bottom: 20px;
+}
+
+.layers-header, .history-header {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.layers-list, .history-list {
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  overflow-y: auto;
+  max-height: 180px;
+  background-color: white;
+}
+
+.layer-item, .history-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid #dee2e6;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.layer-item:last-child, .history-item:last-child {
+  border-bottom: none;
+}
+
+.layer-item:hover, .history-item:hover {
+  background-color: #f0f0f0;
+}
+
+.layer-item.active, .history-item.active {
+  background-color: #e9f2ff;
+  border-left: 3px solid #007bff;
+}
+
+.layer-visibility {
+  margin-right: 10px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.layer-name, .history-text {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.9rem;
+}
+
+.layer-index, .history-index {
+  color: #6c757d;
+  font-size: 0.75rem;
+  margin-left: 5px;
 }
 
 .canvas-container {
@@ -69,74 +138,103 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: #ddd;
+  background-color: #e9ecef;
   position: relative;
 }
 
 #editor-canvas {
   background-color: white;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
 }
 
 #canvas-message {
   position: absolute;
-  color: #666;
-  font-size: 1.2rem;
+  max-width: 80%;
   text-align: center;
-}
-
-button {
-  padding: 8px 12px;
-  border: none;
-  background-color: #3498db;
-  color: white;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-button:hover {
-  background-color: #2980b9;
-}
-
-textarea {
-  width: 100%;
-  height: 80px;
-  padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  resize: none;
 }
 
 .debug-panel {
   background-color: #f8f9fa;
-  border-top: 1px solid #ddd;
-  padding: 10px;
-  max-height: 150px;
-  overflow-y: auto;
+  border-top: 1px solid #dee2e6;
+  padding: 0;
+  transition: max-height 0.3s ease-in-out;
+  overflow: hidden;
+  position: relative;
+  z-index: 1000;
 }
 
-.debug-panel h3 {
-  color: #e74c3c;
-  margin-bottom: 5px;
+.debug-panel.collapsed {
+  max-height: 40px;
+}
+
+.debug-panel:not(.collapsed) {
+  max-height: 200px;
+}
+
+.debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 15px;
+  background-color: #e9ecef;
+  cursor: pointer;
+}
+
+.debug-header h3 {
+  color: #495057;
+  margin: 0;
   font-size: 0.9rem;
+  flex: 1;
+  font-weight: 500;
 }
 
-#debug-content {
+.debug-content {
   font-family: monospace;
   font-size: 0.8rem;
   white-space: pre-wrap;
+  padding: 10px 15px;
+  overflow-y: auto;
+  height: calc(100% - 40px);
+  color: #495057;
+  background-color: #f8f9fa;
 }
 
-h1 {
-  color: #2c3e50;
-  text-align: center;
+/* 自定义对话框样式 */
+.custom-dialog {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 0 20px rgba(0,0,0,0.2);
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2000;
+  max-width: 90%;
+  width: 400px;
 }
 
-.info {
+.custom-dialog h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #343a40;
+  font-weight: 500;
+  border-bottom: 1px solid #dee2e6;
+  padding-bottom: 10px;
+}
+
+.custom-dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
   margin-top: 20px;
-  padding: 10px;
-  background-color: #e7f3fe;
-  border-left: 6px solid #2196F3;
-  font-size: 0.9em;
+}
+
+/* 贴纸选择器样式 */
+.sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+  margin: 15px 0;
 } 
