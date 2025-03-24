@@ -140,18 +140,26 @@ body {
   align-items: center;
   background-color: #e9ecef;
   position: relative;
+  overflow: hidden;
+  padding: 20px;
 }
 
 #editor-canvas {
   background-color: white;
   box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
   border-radius: 4px;
+  max-width: 100%;
+  max-height: 100%;
+  margin: auto;
+  display: block;
+  position: relative;
 }
 
 #canvas-message {
   position: absolute;
   max-width: 80%;
   text-align: center;
+  z-index: 10;
 }
 
 .debug-panel {

@@ -73,14 +73,54 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Canvas 和 Fabric.js 初始化
   try {
+    // 获取容器宽高以便更好地适应
+    const container = document.querySelector('.canvas-container');
+    const containerWidth = container.clientWidth - 40; // 减去padding
+    const containerHeight = container.clientHeight - 40; // 减去padding
+    
+    // 计算适当的画布尺寸，同时保持4:3比例
+    let canvasWidth = Math.min(containerWidth, 1200);
+    let canvasHeight = Math.min(containerHeight, 900);
+    
+    // 如果高度限制更严格，按高度计算宽度
+    if (canvasHeight / canvasWidth < 0.75) { // 3/4 = 0.75
+      canvasWidth = canvasHeight / 0.75;
+    } else { // 否则按宽度计算高度
+      canvasHeight = canvasWidth * 0.75;
+    }
+    
     const canvas = new fabric.Canvas('editor-canvas', {
-      width: 800,
-      height: 600,
-      backgroundColor: '#ffffff'
+      width: canvasWidth,
+      height: canvasHeight,
+      backgroundColor: '#ffffff',
+      preserveObjectStacking: true
+    });
+    
+    // 窗口大小改变时调整canvas大小
+    window.addEventListener('resize', () => {
+      const container = document.querySelector('.canvas-container');
+      const containerWidth = container.clientWidth - 40;
+      const containerHeight = container.clientHeight - 40;
+      
+      let newWidth = Math.min(containerWidth, 1200);
+      let newHeight = Math.min(containerHeight, 900);
+      
+      if (newHeight / newWidth < 0.75) {
+        newWidth = newHeight / 0.75;
+      } else {
+        newHeight = newWidth * 0.75;
+      }
+      
+      // 调整canvas大小
+      canvas.setWidth(newWidth);
+      canvas.setHeight(newHeight);
+      canvas.renderAll();
+      
+      debug.log(`Canvas大小已调整为 ${newWidth}x${newHeight}`);
     });
     
     document.getElementById('canvas-message').style.display = 'none';
-    debug.log('Canvas 初始化完成');
+    debug.log(`Canvas 初始化完成，尺寸: ${canvasWidth}x${canvasHeight}`);
     
     // 当前状态
     let currentImage = null;
